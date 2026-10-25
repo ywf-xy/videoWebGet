@@ -30,6 +30,7 @@ frontend/dist/
 Thumbs.db
 .claude
 .agents
+.workbuddy
 
 # ---- 环境变量 ----
 .env
