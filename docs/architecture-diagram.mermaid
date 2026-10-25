@@ -1,0 +1,38 @@
+flowchart TB
+    subgraph FE["前端 · Vue3 + Vite（:5173）"]
+        V1["Views 7 页面"]
+        V2["Pinia Stores"]
+        V3["api/*.ts + axios 封装"]
+        V4["ECharts / Element Plus"]
+        V1 --> V2 --> V3
+        V1 --> V4
+    end
+
+    subgraph BE["后端 · FastAPI（:8000）"]
+        A1["api/ 路由层<br/>参数校验 + 统一响应"]
+        A2["schemas/ Pydantic v2<br/>DTO + 校验"]
+        A3["services/ 业务编排<br/>事务边界"]
+        A4["engine/ 爬虫引擎<br/>调度 / 策略 / 批次"]
+        A5["parsers/ 解析适配层<br/>内置3解析器 + 脚本沙箱"]
+        A6["downloader/ 下载转换层<br/>HTTP / m3u8 / 图片 / 文本"]
+        A7["db/ SQLAlchemy 2.x<br/>7 表 + WAL + migration"]
+        A1 --> A2 --> A3
+        A3 --> A4
+        A3 --> A7
+        A4 --> A5
+        A4 --> A6
+        A4 --> A7
+    end
+
+    subgraph EXT["外部依赖"]
+        E1["目标站点 HTTP/HTTPS"]
+        E2["ffmpeg / ffprobe 可执行文件"]
+        E3["本地文件系统（输出根目录）"]
+        E4["SQLite 单文件 data/crawlerhub.db"]
+    end
+
+    V3 -- "HTTP JSON / 2s 轮询" --> A1
+    A6 --> E1
+    A6 --> E2
+    A6 --> E3
+    A7 --> E4

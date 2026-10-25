@@ -1,0 +1,239 @@
+@use './variables.scss' as *;
+
+/* ---------- 基础重置 ---------- */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    Arial, sans-serif;
+  font-size: 14px;
+  color: $color-text-primary;
+  background-color: $color-bg-page;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: $color-primary;
+  text-decoration: none;
+}
+
+/* ---------- 通用布局工具类 ---------- */
+.page {
+  padding: $content-padding;
+  min-height: 100%;
+}
+
+.card {
+  background: $color-bg-card;
+  border-radius: $radius-card;
+  box-shadow: $shadow-card;
+  padding: 16px 20px;
+
+  & + .card {
+    margin-top: 16px;
+  }
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 15px;
+  font-weight: 600;
+  color: $color-text-primary;
+  margin-bottom: 12px;
+
+  .card-title__left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+.flex {
+  display: flex;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+}
+
+.gap-4 {
+  gap: 4px;
+}
+
+.gap-8 {
+  gap: 8px;
+}
+
+.gap-12 {
+  gap: 12px;
+}
+
+.gap-16 {
+  gap: 16px;
+}
+
+.text-secondary {
+  color: $color-text-secondary;
+}
+
+.text-danger {
+  color: $color-danger;
+}
+
+.text-warning {
+  color: $color-warning;
+}
+
+.text-success {
+  color: $color-success;
+}
+
+.text-mono {
+  font-family: $font-mono;
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-8 {
+  margin-top: 8px;
+}
+
+.mt-12 {
+  margin-top: 12px;
+}
+
+.mt-16 {
+  margin-top: 16px;
+}
+
+.mb-8 {
+  margin-bottom: 8px;
+}
+
+.mb-12 {
+  margin-bottom: 12px;
+}
+
+.mb-16 {
+  margin-bottom: 16px;
+}
+
+.w-full {
+  width: 100%;
+}
+
+/* ---------- 表格 ---------- */
+.el-table {
+  --el-table-header-bg-color: #fafafa;
+}
+
+.table-row-disabled {
+  color: $color-text-placeholder;
+
+  td {
+    background-color: #fafafa !important;
+  }
+}
+
+/* ---------- 日志窗口（等宽 + 深色） ---------- */
+.log-window {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-radius: $radius-sm;
+  font-family: $font-mono;
+  font-size: 12px;
+  line-height: 1.7;
+  padding: 10px 12px;
+  height: 260px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+
+  .log-line {
+    display: flex;
+    gap: 8px;
+  }
+
+  .log-time {
+    color: #7f8c9a;
+    flex-shrink: 0;
+  }
+
+  .log-level {
+    flex-shrink: 0;
+    width: 46px;
+    font-weight: 600;
+  }
+
+  .log-level--INFO {
+    color: #61afef;
+  }
+
+  .log-level--WARN {
+    color: #e5c07b;
+  }
+
+  .log-level--ERROR {
+    color: #e06c75;
+  }
+
+  .log-empty {
+    color: #7f8c9a;
+  }
+
+  mark {
+    background: #f5d76e;
+    color: #1e1e1e;
+    padding: 0 2px;
+    border-radius: 2px;
+  }
+}
+
+/* ---------- 滚动条 ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c8ccd4;
+  border-radius: 4px;
+
+  &:hover {
+    background: #a8abb2;
+  }
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- 1280px 下无横向滚动（NFR-17） ---------- */
+@media (max-width: 1366px) {
+  .el-table {
+    font-size: 13px;
+  }
+}

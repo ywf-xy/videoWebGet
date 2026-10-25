@@ -1,0 +1,12 @@
+# CrawlerHub 后端测试依赖（生产运行不需要，仅开发/CI 使用）
+# 安装：backend/.venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+# 运行：cd backend && .venv/Scripts/python.exe -m pytest tests -q
+
+pytest==9.1.1
+pytest-timeout==2.4.0
+# 覆盖率（concurrency=thread，引擎线程也要统计）：--cov=app --cov-config=tests/coverage.rc
+pytest-cov==7.1.0
+# fastapi.testclient（starlette TestClient）硬依赖，缺失时导入即报错
+httpx==0.28.1
+# 中文 PDF 文本抽取校验（缺失时 test_text_pdf.py 的对应用例会 skip 而非失败）
+pdfminer.six==20260107

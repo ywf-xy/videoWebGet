@@ -1,0 +1,11 @@
+# 覆盖率配置（测试专用，放在 tests/ 内以免污染项目根）
+# 用法：pytest tests --cov=app --cov-config=tests/coverage.rc --cov-report=term-missing
+[run]
+concurrency = thread
+branch = False
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError

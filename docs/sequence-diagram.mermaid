@@ -1,0 +1,149 @@
+%% 三张时序图：批次执行 / m3u8 转换 / 暂停恢复
+
+sequenceDiagram
+    autonumber
+    participant U as 用户
+    participant W as WorkbenchView
+    participant API as api/batch.py
+    participant BS as BatchService
+    participant CE as CrawlerEngine
+    participant BR as BatchRunner
+    participant SR as StrategyResolver
+    participant P as BaseParser
+    participant TS as TaskScheduler
+    participant DL as M3U8Downloader
+    participant DB as SQLite
+
+    U->>W: 选策略 + 填参数，点「开始爬取」
+    W->>API: POST /api/batches
+    API->>BS: create(payload)
+    BS->>DB: 查 running/paused 批次（单飞）＋ 队列长度
+    DB-->>BS: 无冲突
+    BS->>DB: INSERT crawl_batch(status=pending, phase=parse, threads=N)
+    BS->>CE: submit_batch(batch_id, threads)
+    CE->>BR: 新建 BatchRunner 并提交到批次池
+    BS-->>API: batch_id
+    API-->>W: {code:0, data:{batch_id}}
+    W->>API: 每 2s GET /api/batches/{id}/progress
+
+    BR->>DB: 读 data_source（current_url / cursor / config_json）
+    BR->>SR: resolve(ds, strategy, params)
+    loop 按策略翻页
+        SR->>P: parse_list(url, page)
+        P-->>SR: [{title, url, seq_no, date}]
+    end
+    SR->>SR: 去重 + 游标过滤 + 边界判定
+    SR-->>BR: StrategyResult(items, skipped, warnings, cursor_after)
+    alt 阶段一异常/0 条
+        BR->>DB: UPDATE batch(status=failed|success, phase=done) + ERROR 日志
+    else 正常
+        BR->>DB: INSERT crawl_task × n（pending）; batch.total_tasks=n, phase=execute, status=running
+        loop 直到无 pending 或批次数被暂停
+            TS->>DB: SELECT 1 条 pending（seq_no 升序，加锁跳过 running）
+            TS->>DB: UPDATE task status=running, attempt_count+1
+            TS->>DL: download(m3u8_url, task_id, work_dir)
+            DL-->>TS: mp4_path（含原子步骤 checkpoint）
+            TS->>DB: INSERT task_result + artifact(status=success)
+            TS->>DB: UPDATE task status=success, step_done=step_total; batch.done_tasks+1
+            Note over TS,DB: 失败：status=failed + error_code + ERROR 日志 + batch.failed_tasks+1
+        end
+        BR->>DB: UPDATE batch cursor_after / status=success|success_with_warning|failed / finished_at
+    end
+    API->>DB: progress 聚合查询
+    API-->>W: {batch:{progress, done, failed, active}, active:[...]}
+
+sequenceDiagram
+    autonumber
+    participant TS as TaskScheduler
+    participant MD as M3U8Downloader
+    participant HC as HttpClient
+    participant FS as 临时目录
+    participant FF as FfmpegConverter
+    participant PB as PathBuilder
+
+    TS->>MD: download(m3u8_url, task_id, work_dir)
+    MD->>HC: GET master.m3u8
+    HC-->>MD: playlist 文本
+    alt 含 EXT-X-STREAM-INF
+        MD->>MD: 选最高 BANDWIDTH variant
+        MD->>HC: GET variant.m3u8
+        HC-->>MD: media playlist
+    end
+    alt 含 EXT-X-KEY METHOD=AES-128
+        MD->>HC: GET key URI
+        HC-->>MD: 16 字节 key
+        MD->>MD: IV = 显式 IV，缺省用 media sequence 大端 16 字节
+    else METHOD=SAMPLE-AES / DRM
+        MD-->>TS: raise BizError(4007 DRM_UNSUPPORTED)
+    end
+    MD->>FS: 创建 {output_root}/.tmp/{task_id}/
+    par 分片并发（min(4,max_threads)）
+        MD->>HC: GET seg_00001.ts
+        HC-->>MD: bytes
+        MD->>MD: AES-CBC 解密（如加密）
+        MD->>FS: 写 00001.ts
+        MD->>TS: checkpoint（暂停检查，返回值决定是否中止）
+    and
+        MD->>HC: GET seg_00002.ts（失败重试 2 次）
+    end
+    MD->>FS: 按 EXTINF 顺序二进制 concat → merged.ts
+    MD->>FF: available ?
+    alt ffmpeg 可用
+        FF->>FF: ffmpeg -i merged.ts -c copy -movflags +faststart out.mp4
+        alt -c copy 失败（容器不兼容）
+            FF->>FF: 兜底路径：回退 -c:v libx264 -c:a aac 重编码
+        end
+        FF-->>MD: ok
+    else ffmpeg 不可用（降级路径）
+        MD->>FS: 本地 concat 结果 {name}.ts 保留，记 artifact(output_path=.ts)
+        MD-->>TS: raise BizError(3003 FFMPEG_MISSING)
+        Note over MD,TS: 满足 PRD P0-10④：任务标 failed + 提示「未检测到 ffmpeg」；<br/>同时产物可播放（.ts），便于装好 ffmpeg 后一键重试复用已有分片
+    end
+    MD->>FF: probe_duration(out.mp4)
+    MD->>PB: build_video(ds, title)
+    MD->>FS: os.replace 到目标路径（同盘原子）
+    MD->>FS: 删除 .tmp/{task_id}（失败保留 24h）
+    MD-->>TS: TaskOutcome(path, size, duration_s)
+
+sequenceDiagram
+    autonumber
+    participant U as 用户
+    participant API as api/batch.py
+    participant BS as BatchService
+    participant PC as PauseController
+    participant BR as BatchRunner
+    participant TS as TaskScheduler
+    participant DB as SQLite
+
+    U->>API: POST /api/batches/{id}/pause
+    API->>BS: pause(batch_id)
+    BS->>PC: request(batch_id)（Event.clear）
+    BS->>DB: UPDATE batch status=paused, pause_requested_at=now
+    API-->>U: {status:'paused'}
+    loop 运行中任务
+        TS->>PC: checkpoint(batch_id)
+        alt 已请求暂停
+            TS->>DB: UPDATE task status=pending（保留 step_done，断点续传）
+            TS->>DB: UPDATE artifact status=failed(processing→中断) 或保留 processing
+            TS-->>TS: 退出当前任务，不再领取新任务
+        else 未暂停
+            TS->>TS: 继续下一个原子步骤
+        end
+    end
+    BR->>PC: wait_zero_active(batch_id, 30s)
+    alt 30s 内归零
+        BR->>DB: UPDATE batch status=paused
+    else 超时
+        BR->>DB: UPDATE batch status=paused_with_warning + WARN 日志（残留 task_id）
+    end
+    Note over BR,DB: 此时活跃线程数=0，前端进度条停住
+
+    U->>API: POST /api/batches/{id}/resume
+    API->>BS: resume(batch_id)
+    BS->>DB: 校验 batch.status in (paused,paused_with_warning)
+    BS->>PC: clear(batch_id)
+    BS->>DB: UPDATE batch status=running, pause_requested_at=NULL
+    BS->>BR: 若 Runner 已退出则重新 submit_batch（复用同一 batch_id）
+    BR->>TS: 从 status=pending 继续（success 任务不重复执行）
+    TS->>DB: SELECT pending ORDER BY seq_no
+    API-->>U: {status:'running'}

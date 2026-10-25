@@ -1,0 +1,162 @@
+classDiagram
+    class CrawlerEngine {
+        -_executor_registry: dict
+        -_global_semaphore: BoundedSemaphore
+        -_runners: dict
+        +start() None
+        +submit_batch(batch_id: int, threads: int) int
+        +pause_batch(batch_id: int) bool
+        +resume_batch(batch_id: int) bool
+        +retry_tasks(task_ids: list) int
+        +active_count() int
+        +shutdown() None
+    }
+
+    class BatchRunner {
+        +batch_id: int
+        +data_source_id: int
+        +threads: int
+        +run() None
+        -_phase_parse() void
+        -_phase_execute() void
+        -_finalize() void
+    }
+
+    class TaskScheduler {
+        +batch_id: int
+        +take_next() Task
+        +run_task(task: Task) None
+        +backoff_sleep(attempt: int) None
+        +should_retry(err: BizError, attempt: int) bool
+    }
+
+    class PauseController {
+        -_events: dict
+        +request(batch_id: int) None
+        +clear(batch_id: int) None
+        +checkpoint(batch_id: int) bool
+        +wait_zero_active(batch_id: int, timeout: float) bool
+    }
+
+    class StrategyResolver {
+        +resolve(ds: DataSource, strategy: str, params: dict) StrategyResult
+        -_by_count(ds, n) StrategyResult
+        -_by_page(ds, start, pages) StrategyResult
+        -_by_date(ds, date_from, date_to) StrategyResult
+    }
+
+    class StrategyResult {
+        +items: list
+        +skipped: int
+        +warnings: list
+        +cursor_after: dict
+        +status: str
+    }
+
+    class BaseParser {
+        <<abstract>>
+        +name: str
+        +parse_list(url: str, page: int) list
+        +parse_detail(item: dict) dict
+        +parse_pages(url: str) int
+    }
+
+    class HtmlListParser {
+        +config: dict
+        +parse_list(url: str, page: int) list
+        +parse_detail(item: dict) dict
+        +parse_pages(url: str) int
+    }
+
+    class M3U8Parser {
+        +parse_master(content: str) str
+        +parse_media(content: str) MediaPlaylist
+    }
+
+    class ImageSetParser {
+        +parse_list(url: str, page: int) list
+        +parse_images(detail_url: str) list
+    }
+
+    class ScriptSandbox {
+        +validate(script: str, entry: str) SyntaxResult
+        +execute(script: str, entry: str, args: dict, timeout: int) dict
+        -_restricted_builtins() dict
+    }
+
+    class M3U8Downloader {
+        +http: HttpClient
+        +max_segment_workers: int
+        +download(m3u8_url: str, task_id: int, work_dir: str) str
+        -_fetch_key(uri: str) bytes
+        -_decrypt_segment(data: bytes, key: bytes, iv: bytes) bytes
+        -_concat(segments: list, out: str) void
+    }
+
+    class FfmpegConverter {
+        +path: str
+        +available: bool
+        +detect() bool
+        +to_mp4(src: str, dst: str) void
+        +probe_duration(path: str) float
+    }
+
+    class HttpClient {
+        +get(url: str, **kw) Response
+        +get_bytes(url: str) bytes
+        +stream_to(url: str, fp: str) int
+        +set_referer(url: str) None
+    }
+
+    class ImageDownloader {
+        +http: HttpClient
+        +download_set(urls: list, out_dir: str, on_step: callable) int
+    }
+
+    class TextWriter {
+        +write_txt(path: str, title: str, content: str) int
+        +write_pdf(path: str, title: str, content: str) int
+    }
+
+    class PathBuilder {
+        +root: str
+        +build_video(ds: DataSource, name: str) str
+        +build_text(ds: DataSource, title: str, chapter: str, fmt: str) str
+        +build_image_dir(ds: DataSource, name: str) str
+        +temp_dir(task_id: int) str
+        +cleanup_temp(task_id: int) void
+    }
+
+    class HealthCalculator {
+        +compute(sample: list) int
+        +level(score: int) str
+    }
+
+    class BatchService {
+        +create(payload: BatchCreate) int
+        +pause(batch_id: int) void
+        +resume(batch_id: int) void
+        +progress(batch_id: int) dict
+        +retry_failed(batch_id: int) int
+    }
+
+    CrawlerEngine "1" o-- "*" BatchRunner : 管理
+    BatchRunner "1" --> "1" TaskScheduler : 驱动
+    BatchRunner "1" --> "1" StrategyResolver : 阶段一
+    BatchRunner "1" --> "1" PauseController : 检查
+    TaskScheduler "1" --> "1" BaseParser : 解析详情
+    TaskScheduler "1" --> "1" M3U8Downloader : 视频
+    TaskScheduler "1" --> "1" ImageDownloader : 图片
+    TaskScheduler "1" --> "1" TextWriter : 文字
+    TaskScheduler "1" --> "1" PathBuilder : 落盘路径
+    M3U8Downloader "1" --> "1" FfmpegConverter : 转封装
+    M3U8Downloader "1" --> "1" HttpClient : 分片
+    ImageDownloader "1" --> "1" HttpClient : 单图
+    BaseParser <|-- HtmlListParser
+    BaseParser <|-- ImageSetParser
+    StrategyResolver "1" --> "1" BaseParser : 列表解析
+    StrategyResolver "1" --> "*" StrategyResult
+    BatchService "1" --> "1" CrawlerEngine : 提交
+    CrawlerEngine "1" --> "1" PauseController : 暂停登记
+    HtmlListParser "1" --> "1" ScriptSandbox : 自定义脚本优先
+    TaskScheduler ..> HealthCalculator : 任务终态后重算健康度
